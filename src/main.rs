@@ -10,7 +10,7 @@ mod texture;
 mod utils;
 
 use anyhow::Result;
-use glam::{Mat4, Vec3};
+use glam::{Mat4, UVec2, Vec2, Vec3};
 use model::{Model, ModelDrawer};
 use primitives::CpuTexture;
 use utils::Vertex;
@@ -45,7 +45,7 @@ struct SandGrid {
     height: usize,
     meta: Vec<u8>, //occupied or not, but could be expanded in the future to include other metadata
     color: CpuTexture,
-    velocity: Vec<f32>
+    velocity: Vec<Vec2>
 }
 
 impl SandGrid {
@@ -57,7 +57,7 @@ impl SandGrid {
             height as _,
             utils::new_texture(width as _, height as _));
 
-        let velocity = vec![0.0; (width * height) as _];
+        let velocity = vec![Vec2::ZERO; (width * height) as _];
 
         SandGrid {
             width,
@@ -70,7 +70,7 @@ impl SandGrid {
 
 
     fn simulate(&mut self, dt: f32) {
-        const ACCEL: f32 = 9.81;
+        const ACCEL: Vec2 = Vec2::new(0.0,9.81);
 
         for y in (0..self.height).rev() {
             for x in 0..self.width {
@@ -86,13 +86,17 @@ impl SandGrid {
                 let v = self.velocity[i_current];
                 let v_next = v + ACCEL * dt;
                 self.velocity[i_current] = v_next;
-                self.color.set_pixel(x, y, (v_next/10.0 * 255.0).round() as u8, 0, 0, 255);
+                self.color.set_pixel(x, y, (v_next.y/10.0 * 255.0).round() as u8, (v_next.x/10.0 * 255.0).round() as u8, 0, 255);
 
-                if v_next < 1.0 {
+                if v_next.length_squared() < 1.0 {
                     continue;
                 }
 
-                let y_target = std::cmp::min(y + v_next.round() as usize, self.height - 1);
+                let target_position = UVec2::new(
+                    std::cmp::min(x as u32 + v_next.x.round() as u32, (self.width - 1) as _), 
+                    std::cmp::min(y as u32 + v_next.y.round() as u32, (self.height - 1) as _)
+                );
+                let y_target = target_position.y as usize;
                 let mut y_target_collision = y+1;
                 //find the next collision
                 for y_bellow in y+1..y_target+1 {
@@ -139,7 +143,7 @@ impl SandGrid {
     fn spawn_sand_at(&mut self,x: usize, y: usize) {
         let i = y*self.width + x;
         self.meta[i] = 1;
-        self.velocity[i] = 1.0;
+        self.velocity[i] = Vec2::new(0.0, 1.0);
         let r = 0 as u8;
         let g = 255 as u8;
         let b = 255 as u8;
