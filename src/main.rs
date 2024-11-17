@@ -43,65 +43,103 @@ struct MyApp {
 struct SandGrid {
     width: usize,
     height: usize,
-    meta: Vec<u8>,
+    meta: Vec<u8>, //occupied or not, but could be expanded in the future to include other metadata
     color: CpuTexture,
     velocity: Vec<f32>
 }
 
 impl SandGrid {
     fn new(width: usize, height: usize) -> Self {
-        let mut sand_info = Vec::<u8>::with_capacity((width * height) as _);
-        sand_info.resize(sand_info.capacity(), 0);
-        let quad_tex = primitives::CpuTexture::new(
+        let mut meta = Vec::<u8>::with_capacity((width * height) as _);
+        meta.resize(meta.capacity(), 0);
+        let color = primitives::CpuTexture::new(
             width as _,
             height as _,
             utils::new_texture(width as _, height as _));
 
+        let velocity = vec![0.0; (width * height) as _];
+
         SandGrid {
             width,
             height,
-            meta: sand_info,
-            color: quad_tex,
-            velocity: vec![0.0; (width * height) as _]
+            meta,
+            color,
+            velocity
         }
     }
 
-    fn simulate(&mut self) {
+
+    fn simulate(&mut self, dt: f32) {
+        const ACCEL: f32 = 9.81;
 
         for y in (0..self.height).rev() {
             for x in 0..self.width {
-                let i = y * self.width + x;
-                if !Self::is_pixel_solid(self.meta[i]) {
+                let i_current = self.coord_to_index(x, y);
+                if !Self::is_pixel_solid(self.meta[i_current]) {
                     continue;
                 }
     
                 if y == self.height - 1 {
                     continue;
                 }
+
+                let v = self.velocity[i_current];
+                let v_next = v + ACCEL * dt;
+                self.velocity[i_current] = v_next;
+                self.color.set_pixel(x, y, (v_next/10.0 * 255.0).round() as u8, 0, 0, 255);
+
+                if v_next < 1.0 {
+                    continue;
+                }
+
+                let y_target = std::cmp::min(y + v_next.round() as usize, self.height - 1);
+                let mut y_target_collision = y+1;
+                //find the next collision
+                for y_bellow in y+1..y_target+1 {
+                    if y_bellow == self.height - 1 {
+                        break;
+                    }
+
+                    let i_bellow =  self.coord_to_index(x, y_bellow);
+                    if Self::is_pixel_solid(self.meta[i_bellow]) {
+                        break;
+                    }
+                    y_target_collision = y_bellow
+                }
+
+                let i_bellow =  self.coord_to_index(x, y_target_collision);
     
-                let pixel_bellow = self.meta[i + self.width];
+                let pixel_bellow = self.meta[i_bellow];
                 if !Self::is_pixel_solid(pixel_bellow) {
-                    self.swap_cell(x,y, x, y+1);
+                    self.swap_cell(x,y, x, y_target_collision);
                 } else {
-                    let pixel_bellow_r = self.meta[i + self.width + 1];
-                    let pixel_bellow_l = self.meta[i + self.width - 1];
+
+                    let i_pixel_bellow_r = self.coord_to_index(x + 1, y_target_collision);
+                    let i_pixel_bellow_l = self.coord_to_index(x - 1, y_target_collision);
+                    let pixel_bellow_l = self.meta[i_pixel_bellow_l];
+                    let pixel_bellow_r = self.meta[i_pixel_bellow_r];
     
                     if !Self::is_pixel_solid(pixel_bellow_l) {
-                        self.swap_cell( x,y, x-1, y+1);
+                        self.swap_cell( x,y, x-1, y_target_collision);
                     } else if !Self::is_pixel_solid(pixel_bellow_r) {
-                        self.swap_cell( x,y, x+1, y+1);
+                        self.swap_cell( x,y, x+1, y_target_collision);
                     }
-                    
-    
+
                 }
+
             }
         }
+    }
+
+    fn coord_to_index(&self, x: usize, y: usize) -> usize {
+        y*self.width + x
     }
 
         
     fn spawn_sand_at(&mut self,x: usize, y: usize) {
         let i = y*self.width + x;
         self.meta[i] = 1;
+        self.velocity[i] = 1.0;
         let r = 0 as u8;
         let g = 255 as u8;
         let b = 255 as u8;
@@ -116,10 +154,12 @@ impl SandGrid {
     fn swap_cell(&mut self, x: usize, y: usize, x1: usize, y1: usize) {
         let i = y*self.width + x;
         let i1 = y1*self.width + x1;
+
         //swap sand info data
         let t = self.meta[i1];
         self.meta[i1] = self.meta[i];
         self.meta[i] = t;
+
         //swap color data
         let pixel = self.color.get_pixel(x, y);
         let pixel1 = self.color.get_pixel(x1, y1);
@@ -127,6 +167,11 @@ impl SandGrid {
         self.color.set_pixel(x1, y1, r, g, b, a);
         let (r,g,b,a) = pixel1;
         self.color.set_pixel(x, y, r, g, b, a);
+
+        //swap velocity data
+        let v = self.velocity[i1];
+        self.velocity[i1] = self.velocity[i];
+        self.velocity[i] = v;
     }
 }
 
@@ -391,7 +436,7 @@ impl crate::wgpu_app::App for MyApp {
 
     fn update(&mut self, input: &WinitInputHelper) {
         let dt = self.frame_timer.tick();
-        let _dt_as_sec = dt.as_secs_f32();
+        let dt_as_sec = dt.as_secs_f32();
 
         const ZOOM_SPEED:f32 = 5.0;
 
@@ -404,7 +449,7 @@ impl crate::wgpu_app::App for MyApp {
         }
 
         let timer = std::time::Instant::now();
-        self.sand_data.simulate();
+        self.sand_data.simulate(dt_as_sec);
         self.simulate_time = timer.elapsed();
         log::info!("Simulate time: {}ms", self.simulate_time.as_millis());
     }
