@@ -13,6 +13,7 @@ use anyhow::Result;
 use glam::{Mat4, UVec2, Vec2, Vec3};
 use model::{Model, ModelDrawer};
 use primitives::CpuTexture;
+use rand::Rng;
 use utils::Vertex;
 use std::cell::RefCell;
 use std::{rc::Rc, sync::Arc};
@@ -117,15 +118,13 @@ impl SandGrid {
                 if !Self::is_pixel_solid(pixel_bellow) {
                     self.swap_cell(x,y, x, y_target_collision);
                 } else {
-
+                    //TODO: remove the determinism of the sand always preferring to slide to the right first
                     let i_pixel_bellow_r = self.coord_to_index(x + 1, y_target_collision);
                     let i_pixel_bellow_l = self.coord_to_index(x - 1, y_target_collision);
-                    let pixel_bellow_l = self.meta[i_pixel_bellow_l];
-                    let pixel_bellow_r = self.meta[i_pixel_bellow_r];
     
-                    if !Self::is_pixel_solid(pixel_bellow_l) {
+                    if x - 1 >= 0 && !Self::is_pixel_solid(self.meta[i_pixel_bellow_l]) {
                         self.swap_cell( x,y, x-1, y_target_collision);
-                    } else if !Self::is_pixel_solid(pixel_bellow_r) {
+                    } else if x + 1 < self.width && !Self::is_pixel_solid(self.meta[i_pixel_bellow_r]) {
                         self.swap_cell( x,y, x+1, y_target_collision);
                     }
 
@@ -141,14 +140,31 @@ impl SandGrid {
 
         
     fn spawn_sand_at(&mut self,x: usize, y: usize) {
-        let i = y*self.width + x;
-        self.meta[i] = 1;
-        self.velocity[i] = Vec2::new(0.0, 1.0);
-        let r = 0 as u8;
-        let g = 255 as u8;
-        let b = 255 as u8;
-        let a = 255 as u8;
-        self.color.set_pixel(x, y, r, g, b, a);
+        let mut rng = rand::thread_rng();
+
+        for y in y-10..y+10 {
+            if y >= self.height {
+                continue;
+            }
+            for x in x-10..x+10 {
+                if x >= self.width {
+                    continue;
+                }
+                if rng.gen_bool(0.5) {
+                    continue;
+                }
+                let i = self.coord_to_index(x , y );
+
+                self.meta[i] = 1;
+                self.velocity[i] = Vec2::new(0.0, 1.0);
+                let r = 0 as u8;
+                let g = 255 as u8;
+                let b = 255 as u8;
+                let a = 255 as u8;
+                self.color.set_pixel(x, y, r, g, b, a);
+            }
+        }
+        
     }
 
     fn is_pixel_solid(info:u8) -> bool {

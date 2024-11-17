@@ -18,3 +18,4 @@ tobj = { version = "3", features = ["log"] }
 png = "0.17"
 web-time = "1.1.0"
 pollster = "0.3"
+rand = "0.8"
