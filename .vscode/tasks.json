@@ -1,0 +1,20 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "cargo",
+			"command": "run",
+			"problemMatcher": [
+				"$rustc"
+			],
+			"options": {
+				"env": {
+					"RUST_LOG": "debug",
+					"RUST_BACKTRACE": "1"
+				}
+			},
+			"group": "build",
+			"label": "rust: cargo run"
+		}
+	]
+}
