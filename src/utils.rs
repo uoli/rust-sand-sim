@@ -123,7 +123,7 @@ pub fn new_texture(width:usize, height: usize) -> Vec<u8> {
     let mut res = Vec::<u8>::with_capacity(size);
     res.resize(size, 255);
 
-    for y  in  0..height {
+    /*for y  in  0..height {
         let v_ratio = y as f32 / height as f32; 
         let g = (v_ratio * 255.0).round() as u8;
         for x in 0..width {
@@ -140,7 +140,7 @@ pub fn new_texture(width:usize, height: usize) -> Vec<u8> {
             res[i + 2] = b;
             res[i + 3] = a;
         }
-    }
+    }*/
 
 
     res

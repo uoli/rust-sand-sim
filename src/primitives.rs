@@ -56,6 +56,15 @@ impl CpuTexture {
     pub fn get_pixels(&self) -> &Vec<u8> {
         &self.data
     }
+
+    pub fn get_pixel(&self,x: usize, y: usize) -> (u8,u8,u8,u8) {
+        let i = ((y * self.width  + x) * 4) as usize;
+        let r = self.data[i + 0];
+        let g = self.data[i + 1];
+        let b = self.data[i + 2];
+        let a = self.data[i + 3];
+        (r,g,b,a)
+    }
 }
 
 pub fn create_white_material(device: &wgpu::Device, queue: &wgpu::Queue, bind_group_layout: &wgpu::BindGroupLayout ) -> model::Material {

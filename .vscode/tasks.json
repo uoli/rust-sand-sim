@@ -15,6 +15,23 @@
 			},
 			"group": "build",
 			"label": "rust: cargo run"
+		},
+		{
+			"type": "cargo",
+			"command": "run",
+			"args": [
+				"--release"],
+			"problemMatcher": [
+				"$rustc"
+			],
+			"options": {
+				"env": {
+					"RUST_LOG": "debug",
+					"RUST_BACKTRACE": "1"
+				}
+			},
+			"group": "build",
+			"label": "rust: cargo run release"
 		}
 	]
 }

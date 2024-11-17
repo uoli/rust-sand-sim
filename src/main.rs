@@ -30,12 +30,104 @@ struct MyApp {
     projection_bindgroup: wgpu::BindGroup,
     camera_buffer: wgpu::Buffer,
     camera_bindgroup: wgpu::BindGroup,
-    quad_tex: primitives::CpuTexture,
+    sand_data: SandGrid,
     quad_uniform_bind_group: wgpu::BindGroup,
     quad_model: Rc<RefCell<Model>>,
     frame_timer: utils::FrameTime,
     aspect_ratio: f32,
     show_wire: bool,
+    simulate_time: std::time::Duration,
+    texture_upload_time: std::time::Duration
+}
+
+struct SandGrid {
+    width: usize,
+    height: usize,
+    meta: Vec<u8>,
+    color: CpuTexture,
+    velocity: Vec<f32>
+}
+
+impl SandGrid {
+    fn new(width: usize, height: usize) -> Self {
+        let mut sand_info = Vec::<u8>::with_capacity((width * height) as _);
+        sand_info.resize(sand_info.capacity(), 0);
+        let quad_tex = primitives::CpuTexture::new(
+            width as _,
+            height as _,
+            utils::new_texture(width as _, height as _));
+
+        SandGrid {
+            width,
+            height,
+            meta: sand_info,
+            color: quad_tex,
+            velocity: vec![0.0; (width * height) as _]
+        }
+    }
+
+    fn simulate(&mut self) {
+
+        for y in (0..self.height).rev() {
+            for x in 0..self.width {
+                let i = y * self.width + x;
+                if !Self::is_pixel_solid(self.meta[i]) {
+                    continue;
+                }
+    
+                if y == self.height - 1 {
+                    continue;
+                }
+    
+                let pixel_bellow = self.meta[i + self.width];
+                if !Self::is_pixel_solid(pixel_bellow) {
+                    self.swap_cell(x,y, x, y+1);
+                } else {
+                    let pixel_bellow_r = self.meta[i + self.width + 1];
+                    let pixel_bellow_l = self.meta[i + self.width - 1];
+    
+                    if !Self::is_pixel_solid(pixel_bellow_l) {
+                        self.swap_cell( x,y, x-1, y+1);
+                    } else if !Self::is_pixel_solid(pixel_bellow_r) {
+                        self.swap_cell( x,y, x+1, y+1);
+                    }
+                    
+    
+                }
+            }
+        }
+    }
+
+        
+    fn spawn_sand_at(&mut self,x: usize, y: usize) {
+        let i = y*self.width + x;
+        self.meta[i] = 1;
+        let r = 0 as u8;
+        let g = 255 as u8;
+        let b = 255 as u8;
+        let a = 255 as u8;
+        self.color.set_pixel(x, y, r, g, b, a);
+    }
+
+    fn is_pixel_solid(info:u8) -> bool {
+        info!=0
+    }
+
+    fn swap_cell(&mut self, x: usize, y: usize, x1: usize, y1: usize) {
+        let i = y*self.width + x;
+        let i1 = y1*self.width + x1;
+        //swap sand info data
+        let t = self.meta[i1];
+        self.meta[i1] = self.meta[i];
+        self.meta[i] = t;
+        //swap color data
+        let pixel = self.color.get_pixel(x, y);
+        let pixel1 = self.color.get_pixel(x1, y1);
+        let (r,g,b,a) = pixel;
+        self.color.set_pixel(x1, y1, r, g, b, a);
+        let (r,g,b,a) = pixel1;
+        self.color.set_pixel(x, y, r, g, b, a);
+    }
 }
 
 
@@ -165,11 +257,8 @@ impl crate::wgpu_app::App for MyApp {
         let quad_height = config.height as _;
         let quad_transform_matrix = glam::Mat4::from_translation(Vec3::new(0.0,0.0, 0.0));
         let (_, quad_uniform_bind_group) = utils::create_matrix_buffer_and_bind_group(device, "quad", &transform_matrix_bind_group_layout, &quad_transform_matrix);
-        let quad_tex = primitives::CpuTexture::new(
-            config.width as _,
-            config.height as _,
-            utils::new_texture(config.width as _, config.height as _));
-        let material = primitives::create_custom_tex_material(device, queue, &texture_bind_group_layout, &quad_tex );
+        let sand_data = SandGrid::new(config.width as _, config.height as _);
+        let material = primitives::create_custom_tex_material(device, queue, &texture_bind_group_layout, &sand_data.color );
         let quad_model = std::rc::Rc::new(std::cell::RefCell::new(primitives::Quad::new(device, &glam::Vec2::new(quad_width,quad_height), material)));
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -271,12 +360,14 @@ impl crate::wgpu_app::App for MyApp {
             projection_bindgroup,
             camera_buffer,
             camera_bindgroup,
-            quad_tex,
+            sand_data,
             quad_uniform_bind_group,
             quad_model,
             aspect_ratio,
             frame_timer,
             show_wire: false,
+            simulate_time: std::time::Duration::new(0, 0),
+            texture_upload_time: std::time::Duration::new(0, 0),
         }
     }
 
@@ -306,15 +397,23 @@ impl crate::wgpu_app::App for MyApp {
 
         if input.mouse_pressed(winit::event::MouseButton::Left) || input.mouse_held(winit::event::MouseButton::Left) {
             if let Some((x,y)) = input.cursor() {
-                spawn_sand_at(x as _, y as _, &mut self.quad_tex)
+                if x >= 0.0 && y >= 0.0 && x < self.sand_data.width as _ && y < self.sand_data.height as _ {
+                    self.sand_data.spawn_sand_at(x as _, y as _)    
+                }
             }
         }
+
+        let timer = std::time::Instant::now();
+        self.sand_data.simulate();
+        self.simulate_time = timer.elapsed();
+        log::info!("Simulate time: {}ms", self.simulate_time.as_millis());
     }
 
     fn render(&mut self, view: &wgpu::TextureView, device: &wgpu::Device, queue: &wgpu::Queue) {
 
-        self.quad_model.borrow_mut().get_material(0).diffuse_texture.set_pixels(queue,  &self.quad_tex.get_pixels()).expect("Unable to update the texture");
-        
+        let timer = std::time::Instant::now();
+        self.quad_model.borrow_mut().get_material(0).diffuse_texture.set_pixels(queue,  &self.sand_data.color.get_pixels()).expect("Unable to update the texture");
+        self.texture_upload_time = timer.elapsed();
 
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -349,24 +448,16 @@ impl crate::wgpu_app::App for MyApp {
             rpass.set_pipeline(&self.pipeline);
             rpass.pop_debug_group();
             rpass.insert_debug_marker("Draw!");
-
-
             rpass.draw_model(&self.projection_bindgroup, &self.camera_bindgroup, &self.quad_model.borrow(), &self.quad_uniform_bind_group);
 
         }
 
         queue.submit(Some(encoder.finish()));
+        log::info!("Texture upload time: {}ms", self.texture_upload_time.as_millis());
     }
 }
 
-fn spawn_sand_at(x: usize, y: usize, tex: &mut CpuTexture) {
-    let r = 0 as u8;
-    let g = 255 as u8;
-    let b = 255 as u8;
-    let a = 255 as u8;
-    tex.set_pixel(x, y, r, g, b, a);
 
-}
 
 fn main() {
     println!("Hello, world!");
